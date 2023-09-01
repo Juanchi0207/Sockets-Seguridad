@@ -1,5 +1,10 @@
 import java.io.*;
 import java.net.*;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
 
 public class ChatServer implements  Runnable {
@@ -7,17 +12,16 @@ public class ChatServer implements  Runnable {
     private final static int BUFFER = 1024;
 
     private DatagramSocket socket;
-    private ArrayList<InetAddress> client_addresses;
-    private ArrayList<Integer> client_ports; //puertos de los cliente
     private HashSet<String> existing_clients; //hashset que contiene a todos los clientes conectados
+    private HashMap<InetAddress, Client>clients;
+
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
     public ChatServer() throws IOException {
         socket = new DatagramSocket(PORT);
         System.out.println("Server ejecutandose y escuchando en el puerto " + PORT);
-        client_addresses = new ArrayList();
-        client_ports = new ArrayList();
         existing_clients = new HashSet();
+        clients=new HashMap<>();
     }
 
     public void run() {
@@ -38,14 +42,22 @@ public class ChatServer implements  Runnable {
                     // si el cliente no estaba ya conectado se lo agrega a:
                     if (!existing_clients.contains(id)) {
                         existing_clients.add(id); //su string convertida con la ip y el puerto en el hashset
-                        client_ports.add(client_port); // el puerto por separado en un array
-                        client_addresses.add(clientAddress); //la ip por separado en otro array
+                        PublicKey publicKey = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(buffer));
+                        Client client=new Client(client_port, publicKey);
+                        clients.put(clientAddress,client);
+                        RSA rsa=new RSA();
+                        PublicKey publicKeyServer= rsa.getPublicKey();
+                        byte bufferPub[] = publicKey.getEncoded();
+                        DatagramPacket packetPub=new DatagramPacket(bufferPub,bufferPub.length,clientAddress,PORT);
+                        socket.send(packetPub);
                     }
-
+                for (Map.Entry<InetAddress,Client> lista:clients.entrySet()){
+                    System.out.println(RSA.encode(lista.getValue().getPublicKey().getEncoded()));
+                }
                     String received = id + " :" + message;
 
 
-                System.out.println(received); //muestra el msj por consola
+                //System.out.println(received); //muestra el msj por consola
                     String senderIp = "/";
                     String finalMessage="";
                     boolean status = false;
@@ -63,11 +75,11 @@ public class ChatServer implements  Runnable {
                     }
                 if (!message.contains("#stopServer")) {
                     byte[] data = (id + " :" + message).getBytes(); //guardamos los datos obtenidos en el byte
-                    for (int i = 0; i < client_addresses.size(); i++) {
-                        InetAddress cl_address = client_addresses.get(i); //verifica que la ip del mensaje este en la lista y envia el paquete
+                    for (Map.Entry<InetAddress,Client> client:clients.entrySet()){
+                        InetAddress cl_address = client.getKey(); //verifica que la ip del mensaje este en la lista y envia el paquete
                         //solo a esa
-                        int cl_port = client_ports.get(i);
-                        if (client_addresses.get(i).toString().equals(senderIp)) {
+                        int cl_port = client.getValue().getPort();
+                        if (client.getKey().toString().equals(senderIp)) {
                             packet = new DatagramPacket(data, data.length, cl_address, cl_port);
                             socket.send(packet);
                             data = (" El mensaje fue recibido por " + cl_address).getBytes();
@@ -93,22 +105,6 @@ public class ChatServer implements  Runnable {
 
     public void setSocket(DatagramSocket socket) {
         this.socket = socket;
-    }
-
-    public ArrayList<InetAddress> getClient_addresses() {
-        return client_addresses;
-    }
-
-    public void setClient_addresses(ArrayList<InetAddress> client_addresses) {
-        this.client_addresses = client_addresses;
-    }
-
-    public ArrayList<Integer> getClient_ports() {
-        return client_ports;
-    }
-
-    public void setClient_ports(ArrayList<Integer> client_ports) {
-        this.client_ports = client_ports;
     }
 
     public HashSet<String> getExisting_clients() {

@@ -2,6 +2,8 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 
 class MessageSender implements Runnable {
     public final static int PORT = 2020; //puerto asignado al server
@@ -25,10 +27,19 @@ class MessageSender implements Runnable {
 
     public void run() {
         boolean connected = false;
+        RSA rsa=new RSA();
+        rsa.init();
+        PrivateKey privateKey=rsa.getPrivateKey();
+        PublicKey publicKey=rsa.getPublicKey();
+        PublicKey publicKeyServer=null;
         do {
             try {
-                sendMessage("Nuevo cliente conectado - Bienvenido!");
                 connected = true;
+                System.out.println(RSA.encode(publicKey.getEncoded()));
+                byte bufferPub[] = publicKey.getEncoded();
+                DatagramPacket packetPub=new DatagramPacket(bufferPub,bufferPub.length,InetAddress.getByName(hostName),PORT);
+                socket.send(packetPub);
+
             } catch (Exception e) {
                 window.displayMessage(e.getMessage());
             } //conecta al cliente y entra en un bucle infinito
@@ -71,44 +82,47 @@ class MessageReceiver implements Runnable {
 
     public void run() {
         boolean infiniteLoop=true;
+        PublicKey publicKeyServer=null;
         while (infiniteLoop) {
             try { //bucle infinito que recibe paquetes
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
-                String received = new String(packet.getData(), 1, packet.getLength() - 1).trim();
-                //crea una string con los datos recibidos
-                String receivedFinal="";
-                String senderIp="";
-                boolean status=false;
-                for (int i=0;i<received.length();i++){
+                if (publicKeyServer!=null) {
+                    String received = new String(packet.getData(), 1, packet.getLength() - 1).trim();
+                    //crea una string con los datos recibidos
+                    String receivedFinal = "";
+                    String senderIp = "";
+                    boolean status = false;
+                    for (int i = 0; i < received.length(); i++) {
 
-                    if (received.charAt(i)==':'){
-                        status=true;
-                        i++;
+                        if (received.charAt(i) == ':') {
+                            status = true;
+                            i++;
+                        }
+                        if (received.charAt(i) == '#') {
+                            status = false;
+                        }
+                        if (status) {
+                            senderIp = senderIp + received.charAt(i);
+                        } else {
+                            receivedFinal = receivedFinal + received.charAt(i);
+                        }
                     }
-                    if (received.charAt(i) == '#'){
-                        status=false;
+                    if (senderIp.equals("Nuevo cliente conectado - Bienvenido!") == false) {
+                        InetAddress address = InetAddress.getByName(senderIp);
+                    } else {
+                        receivedFinal = received;
                     }
-                    if (status){
-                        senderIp=senderIp+received.charAt(i);
+                    System.out.println(receivedFinal);
+                    if (!receivedFinal.contains("#stopClient")) {
+                        window.displayMessage(receivedFinal); //tmb se imprime en la ventana
+                    } else {
+                        Thread.currentThread().join();
+                        infiniteLoop = false;
                     }
-                    else {
-                        receivedFinal=receivedFinal+received.charAt(i);
-                    }
-                }
-                if (senderIp.equals("Nuevo cliente conectado - Bienvenido!")==false) {
-                    InetAddress address = InetAddress.getByName(senderIp);
                 }
                 else {
-                    receivedFinal=received;
-                }
-                System.out.println(receivedFinal);
-                if (!receivedFinal.contains("#stopClient")) {
-                    window.displayMessage(receivedFinal); //tmb se imprime en la ventana
-                }
-                else {
-                    Thread.currentThread().join();
-                    infiniteLoop=false;
+                    //seguir aca
                 }
             } catch (Exception e) {
                 System.err.println(e);
