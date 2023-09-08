@@ -1,15 +1,18 @@
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.Socket;
+import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
 
 class MessageSender implements Runnable {
     public final static int PORT = 2020; //puerto asignado al server
     private DatagramSocket socket;
     private String hostName;
     private ClientWindow window; //ventana que usamos para el chat e ingreso de ip
+    private static PublicKey publicKeyServer;
+
 
     MessageSender(DatagramSocket sock, String host, ClientWindow win) {
         socket = sock;
@@ -17,12 +20,21 @@ class MessageSender implements Runnable {
         window = win;
     }
 
-    private void sendMessage(String s) throws Exception {
-        byte buffer[] = s.getBytes(); //convierte el mensaje a bytes
-        InetAddress address = InetAddress.getByName(hostName); //obtiene ip
-        DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, PORT);
-        socket.send(packet); //crea y envia el paquete por el socket
+    public static PublicKey getPublicKeyServer() {
+        return publicKeyServer;
+    }
 
+    public static void setPublicKeyServer(PublicKey publicKeyServer) {
+        MessageSender.publicKeyServer = publicKeyServer;
+    }
+
+    private void sendMessage(String s,RSA rsa) throws Exception {
+
+            String encryptedMessage=rsa.encryptWithPublic(s,publicKeyServer);
+            byte buffer[] = encryptedMessage.getBytes(); //convierte el mensaje a bytes
+            InetAddress address = InetAddress.getByName(hostName); //obtiene ip
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, PORT);
+            socket.send(packet); //crea y envia el paquete por el socket
     }
 
     public void run() {
@@ -31,11 +43,9 @@ class MessageSender implements Runnable {
         rsa.init();
         PrivateKey privateKey=rsa.getPrivateKey();
         PublicKey publicKey=rsa.getPublicKey();
-        PublicKey publicKeyServer=null;
         do {
             try {
                 connected = true;
-                System.out.println(RSA.encode(publicKey.getEncoded()));
                 byte bufferPub[] = publicKey.getEncoded();
                 DatagramPacket packetPub=new DatagramPacket(bufferPub,bufferPub.length,InetAddress.getByName(hostName),PORT);
                 socket.send(packetPub);
@@ -52,7 +62,7 @@ class MessageSender implements Runnable {
                     Thread.sleep(100);
                 }
                 if (!window.getMessage().contains("#stopClient")) {
-                    sendMessage(window.getMessage()); //cuando es true manda en mensaje a la ventana
+                    sendMessage(window.getMessage(),rsa); //cuando es true manda en mensaje a la ventana
                     window.setMessageReady(false); //vuelve a setearlo en false para esperar otro mensaje
                 }
                 else {
@@ -74,6 +84,8 @@ class MessageReceiver implements Runnable {
     byte buffer[];
     ClientWindow window;
 
+    PublicKey publicKeyServer=null;
+
     MessageReceiver(DatagramSocket sock, ClientWindow win) {
         socket = sock;
         buffer = new byte[1024];
@@ -82,30 +94,35 @@ class MessageReceiver implements Runnable {
 
     public void run() {
         boolean infiniteLoop=true;
-        PublicKey publicKeyServer=null;
+        RSA rsa=new RSA();
         while (infiniteLoop) {
             try { //bucle infinito que recibe paquetes
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
                 if (publicKeyServer!=null) {
-                    String received = new String(packet.getData(), 1, packet.getLength() - 1).trim();
+                    String received= new String(buffer, 0,buffer.length);
+                    System.out.println(received);
+                    String decryptedMessage=received;
+                    if (!received.contains("El mensaje fue recibido por")){
+                        decryptedMessage=rsa.decryptWithPublic(received.trim(),publicKeyServer);
+                    }
                     //crea una string con los datos recibidos
                     String receivedFinal = "";
                     String senderIp = "";
                     boolean status = false;
-                    for (int i = 0; i < received.length(); i++) {
+                    for (int i = 0; i < decryptedMessage.length(); i++) {
 
-                        if (received.charAt(i) == ':') {
+                        if (decryptedMessage.charAt(i) == ':') {
                             status = true;
                             i++;
                         }
-                        if (received.charAt(i) == '#') {
+                        if (decryptedMessage.charAt(i) == '#') {
                             status = false;
                         }
                         if (status) {
-                            senderIp = senderIp + received.charAt(i);
+                            senderIp = senderIp + decryptedMessage.charAt(i);
                         } else {
-                            receivedFinal = receivedFinal + received.charAt(i);
+                            receivedFinal = receivedFinal + decryptedMessage.charAt(i);
                         }
                     }
                     if (senderIp.equals("Nuevo cliente conectado - Bienvenido!") == false) {
@@ -122,7 +139,8 @@ class MessageReceiver implements Runnable {
                     }
                 }
                 else {
-                    //seguir aca
+                    publicKeyServer = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(packet.getData()));
+                    MessageSender.setPublicKeyServer(publicKeyServer);
                 }
             } catch (Exception e) {
                 System.err.println(e);
@@ -161,15 +179,18 @@ public class ChatClient {
     public static void main(String args[]) throws Exception {
         ClientWindow window = new ClientWindow();
         String host = window.getHostName();
+        PublicKey publicKeyServer=null;
         window.setTitle("UDP CHAT  Server: " + host);
         DatagramSocket socket = new DatagramSocket();
-        MessageReceiver receiver = new MessageReceiver(socket, window);
         MessageSender sender = new MessageSender(socket, host, window);
+        Thread senderThread = new Thread(sender);
+        MessageReceiver receiver = new MessageReceiver(socket, window);
+        senderThread.start();
         Thread receiverThread = new Thread(receiver); //thread para recibir mensajes asignado a la clase receiver
-        Thread senderThread = new Thread(sender); //thread para mandar mensajes asignado a la clase sender
+         //thread para mandar mensajes asignado a la clase sender
         // los threads se utilizan para poder realizar multiples aciones al mismo tiempo
         // por eso minetras que estoy escribiendo puedo estar ecibiendo msjs y viceversa
         receiverThread.start(); // inicio ambos threads
-        senderThread.start();
+
     }
 }

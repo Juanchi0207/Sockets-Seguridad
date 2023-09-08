@@ -27,14 +27,15 @@ public class ChatServer implements  Runnable {
     public void run() {
         byte[] buffer = new byte[BUFFER]; //buffer en el que se almacenan los datos recibidos por el socket
         boolean infiniteLoop=true;
+        RSA rsa=new RSA();
+        rsa.init();
+        System.out.println(rsa.getPublicKey());
         while (infiniteLoop) {
             try {
                 Arrays.fill(buffer, (byte) 0);
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
-
                 String message = new String(buffer, 0, buffer.length);
-                System.out.println(message);
                     InetAddress clientAddress = packet.getAddress(); //de la clase DatagramPacket usamos
                     //metodo para obtener la ip de ese paquete
                     int client_port = packet.getPort(); //lo mismo para el puerto asignado a esta comunicacion
@@ -45,19 +46,19 @@ public class ChatServer implements  Runnable {
                         PublicKey publicKey = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(buffer));
                         Client client=new Client(client_port, publicKey);
                         clients.put(clientAddress,client);
-                        RSA rsa=new RSA();
-                        PublicKey publicKeyServer= rsa.getPublicKey();
-                        byte bufferPub[] = publicKey.getEncoded();
-                        DatagramPacket packetPub=new DatagramPacket(bufferPub,bufferPub.length,clientAddress,PORT);
+                        byte bufferPub[] = rsa.getPublicKey().getEncoded();
+                        DatagramPacket packetPub=new DatagramPacket(bufferPub,bufferPub.length,clientAddress,client_port);
                         socket.send(packetPub);
                     }
                 for (Map.Entry<InetAddress,Client> lista:clients.entrySet()){
-                    System.out.println(RSA.encode(lista.getValue().getPublicKey().getEncoded()));
+                    System.out.println(RSA.encode(lista.getValue().getPublicKey().getEncoded()) + " el cliente: " + lista.getKey().toString());
                 }
-                    String received = id + " :" + message;
+                message= message.trim();
+                String messageDecrypted=rsa.decryptWithPrivate(message, rsa.getPrivateKey());
+                String received = (id + " :" + messageDecrypted);
 
 
-                //System.out.println(received); //muestra el msj por consola
+               // System.out.println(received); //muestra el msj por consola
                     String senderIp = "/";
                     String finalMessage="";
                     boolean status = false;
@@ -73,8 +74,11 @@ public class ChatServer implements  Runnable {
                             senderIp = senderIp + received.charAt(i);
                         }
                     }
-                if (!message.contains("#stopServer")) {
-                    byte[] data = (id + " :" + message).getBytes(); //guardamos los datos obtenidos en el byte
+
+                if (!messageDecrypted.contains("#stopServer")) {
+                    String encryptedMessage=rsa.encryptWithPrivate(messageDecrypted, rsa.getPrivateKey());
+                    System.out.println(encryptedMessage);
+                    byte[] data = encryptedMessage.getBytes(); //guardamos los datos obtenidos en el byte
                     for (Map.Entry<InetAddress,Client> client:clients.entrySet()){
                         InetAddress cl_address = client.getKey(); //verifica que la ip del mensaje este en la lista y envia el paquete
                         //solo a esa

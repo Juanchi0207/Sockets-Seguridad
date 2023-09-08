@@ -5,20 +5,6 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 
-/**
- * @author Anass AIT BEN EL ARBI
- * <ul>
- *     <li>AES/CBC/NoPadding (128)</li>
- *     <li>AES/CBC/PKCS5Padding (128)</li>
- *     <li>AES/ECB/NoPadding (128)</li>
- *     <li>AES/ECB/PKCS5Padding (128)</li>
- *     <li>RSA/ECB/PKCS1Padding (1024, 2048)</li>
- *     <li>RSA/ECB/OAEPWithSHA-1AndMGF1Padding (1024, 2048)</li>
- *     <li>RSA/ECB/OAEPWithSHA-256AndMGF1Padding (1024, 2048)</li>
- * </ul>
- * <p>
- * for more details @see <a href="https://docs.oracle.com/javase/7/docs/api/javax/crypto/Cipher.html">Java Ciphers</a>
- */
 
 public class RSA {
 
@@ -67,13 +53,23 @@ public class RSA {
         System.err.println("Private key\n"+ encode(privateKey.getEncoded()));
     }
 
-    public String encrypt(String message) throws Exception {
+    public String encryptWithPublic(String message, PublicKey publicKey1) throws Exception {
         byte[] messageToBytes = message.getBytes();
         Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-        cipher.init(Cipher.ENCRYPT_MODE, publicKey);
+        cipher.init(Cipher.ENCRYPT_MODE, publicKey1);
         byte[] encryptedBytes = cipher.doFinal(messageToBytes);
         return encode(encryptedBytes);
     }
+
+    public String encryptWithPrivate(String message, PrivateKey privateKey1) throws Exception {
+        byte[] messageToBytes = message.getBytes();
+        Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        cipher.init(Cipher.ENCRYPT_MODE, privateKey1);
+        byte[] encryptedBytes = cipher.doFinal(messageToBytes);
+        return encode(encryptedBytes);
+    }
+
+
 
     public static String encode(byte[] data) {
         return Base64.getEncoder().encodeToString(data);
@@ -82,10 +78,18 @@ public class RSA {
         return Base64.getDecoder().decode(data);
     }
 
-    public String decrypt(String encryptedMessage) throws Exception {
+    public String decryptWithPrivate(String encryptedMessage, PrivateKey privateKey1) throws Exception {
         byte[] encryptedBytes = decode(encryptedMessage);
         Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-        cipher.init(Cipher.DECRYPT_MODE, privateKey);
+        cipher.init(Cipher.DECRYPT_MODE, privateKey1);
+        byte[] decryptedMessage = cipher.doFinal(encryptedBytes);
+        return new String(decryptedMessage, "UTF8");
+    }
+
+    public String decryptWithPublic(String encryptedMessage, PublicKey publicKey1) throws Exception {
+        byte[] encryptedBytes = decode(encryptedMessage);
+        Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        cipher.init(Cipher.DECRYPT_MODE, publicKey1);
         byte[] decryptedMessage = cipher.doFinal(encryptedBytes);
         return new String(decryptedMessage, "UTF8");
     }
@@ -96,11 +100,10 @@ public class RSA {
 
         try{
             rsa.printKeys();
-            String encryptedMessage = rsa.encrypt("hola");
-            String decryptedMessage = rsa.decrypt(encryptedMessage);
-            System.err.println("Encrypted:\n"+encryptedMessage);
-            System.err.println("Decrypted:\n"+decryptedMessage);
-
+           // String encryptedMessage = rsa.encrypt("hola");
+            //String decryptedMessage = rsa.decrypt(encryptedMessage);
+            //System.err.println("Encrypted:\n"+encryptedMessage);
+            //System.err.println("Decrypted:\n"+decryptedMessage);
         }catch (Exception ingored){}
 
 
