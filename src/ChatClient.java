@@ -5,6 +5,7 @@ import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
+import java.util.Arrays;
 
 class MessageSender implements Runnable {
     public final static int PORT = 2020; //puerto asignado al server
@@ -29,12 +30,26 @@ class MessageSender implements Runnable {
     }
 
     private void sendMessage(String s,RSA rsa) throws Exception {
-
-            String encryptedMessage=rsa.encryptWithPublic(s,publicKeyServer);
-            byte buffer[] = encryptedMessage.getBytes(); //convierte el mensaje a bytes
-            InetAddress address = InetAddress.getByName(hostName); //obtiene ip
-            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, PORT);
-            socket.send(packet); //crea y envia el paquete por el socket
+        Hasher hasher=new Hasher();
+        String aux="";
+        boolean status=false;
+        for (int i=0;i<s.length();i++){
+            if(s.charAt(i)=='#'){
+                status=true;
+            }
+            else if (status) {
+                aux=aux+s.charAt(i);
+            }
+        }
+        InetAddress address = InetAddress.getByName(hostName); //obtiene ip
+        String hashedMessage="Hasheado:"+hasher.encryptString(aux);
+        byte buffer1[] = hashedMessage.getBytes();
+        DatagramPacket packetHash=new DatagramPacket(buffer1, buffer1.length,address,PORT);
+        socket.send(packetHash);
+        String encryptedMessage=rsa.encryptWithPublic(s,publicKeyServer);
+        byte buffer[] = encryptedMessage.getBytes(); //convierte el mensaje a bytes
+        DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, PORT);
+        socket.send(packet); //crea y envia el paquete por el socket
     }
 
     public void run() {
@@ -97,15 +112,16 @@ class MessageReceiver implements Runnable {
         RSA rsa=new RSA();
         while (infiniteLoop) {
             try { //bucle infinito que recibe paquetes
+                Arrays.fill(buffer, (byte) 0); //hace que el buffer se vacie
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
                 if (publicKeyServer!=null) {
-                    String received= new String(buffer, 0,buffer.length);
-                    System.out.println(received);
+                    String received= new String(buffer, 0,buffer.length).trim();
                     String decryptedMessage=received;
                     if (!received.contains("El mensaje fue recibido por")){
                         decryptedMessage=rsa.decryptWithPublic(received.trim(),publicKeyServer);
                     }
+                    System.out.println(decryptedMessage.length());
                     //crea una string con los datos recibidos
                     String receivedFinal = "";
                     String senderIp = "";
@@ -127,8 +143,6 @@ class MessageReceiver implements Runnable {
                     }
                     if (senderIp.equals("Nuevo cliente conectado - Bienvenido!") == false) {
                         InetAddress address = InetAddress.getByName(senderIp);
-                    } else {
-                        receivedFinal = received;
                     }
                     System.out.println(receivedFinal);
                     if (!receivedFinal.contains("#stopClient")) {

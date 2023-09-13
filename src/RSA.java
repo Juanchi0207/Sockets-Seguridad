@@ -83,7 +83,7 @@ public class RSA {
         Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
         cipher.init(Cipher.DECRYPT_MODE, privateKey1);
         byte[] decryptedMessage = cipher.doFinal(encryptedBytes);
-        return new String(decryptedMessage, "UTF8");
+        return new String(decryptedMessage,0, decryptedMessage.length);
     }
 
     public String decryptWithPublic(String encryptedMessage, PublicKey publicKey1) throws Exception {
@@ -91,7 +91,7 @@ public class RSA {
         Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
         cipher.init(Cipher.DECRYPT_MODE, publicKey1);
         byte[] decryptedMessage = cipher.doFinal(encryptedBytes);
-        return new String(decryptedMessage, "UTF8");
+        return new String(decryptedMessage,0, decryptedMessage.length);
     }
 
     public static void main(String[] args) {
