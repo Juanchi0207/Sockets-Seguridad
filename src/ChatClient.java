@@ -14,6 +14,9 @@ class MessageSender implements Runnable {
     private ClientWindow window; //ventana que usamos para el chat e ingreso de ip
     private static PublicKey publicKeyServer;
 
+    private PublicKey publicKeyClient;
+    private PrivateKey privateKeyCliente;
+
 
     MessageSender(DatagramSocket sock, String host, ClientWindow win) {
         socket = sock;
@@ -31,7 +34,7 @@ class MessageSender implements Runnable {
 
     private void sendMessage(String s,RSA rsa) throws Exception {
         Hasher hasher=new Hasher();
-        String aux="";
+        String aux=""; //mensaje solo sin la ip destino
         boolean status=false;
         for (int i=0;i<s.length();i++){
             if(s.charAt(i)=='#'){
@@ -42,11 +45,13 @@ class MessageSender implements Runnable {
             }
         }
         InetAddress address = InetAddress.getByName(hostName); //obtiene ip
-        String hashedMessage="Hasheado:"+hasher.encryptString(aux);
+        String hashedMessage="Hasheado:"+rsa.encryptWithPrivate(hasher.encryptString(aux),privateKeyCliente);
+        //hasheamos y encriptamos con clave priv para asegurar autenticacion
         byte buffer1[] = hashedMessage.getBytes();
         DatagramPacket packetHash=new DatagramPacket(buffer1, buffer1.length,address,PORT);
         socket.send(packetHash);
-        String encryptedMessage=rsa.encryptWithPublic(s,publicKeyServer);
+        //envio del packet hasheado y encriptado
+        String encryptedMessage=rsa.encryptWithPublic(s,publicKeyServer); //encriptado publica servidor
         byte buffer[] = encryptedMessage.getBytes(); //convierte el mensaje a bytes
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, PORT);
         socket.send(packet); //crea y envia el paquete por el socket
@@ -56,12 +61,14 @@ class MessageSender implements Runnable {
         boolean connected = false;
         RSA rsa=new RSA();
         rsa.init();
-        PrivateKey privateKey=rsa.getPrivateKey();
-        PublicKey publicKey=rsa.getPublicKey();
+        privateKeyCliente=rsa.getPrivateKey();
+        publicKeyClient=rsa.getPublicKey();
+        MessageReceiver.setPublicKeyClient(publicKeyClient);
+        MessageReceiver.setPrivateKeyClient(privateKeyCliente);
         do {
             try {
                 connected = true;
-                byte bufferPub[] = publicKey.getEncoded();
+                byte bufferPub[] = publicKeyClient.getEncoded();
                 DatagramPacket packetPub=new DatagramPacket(bufferPub,bufferPub.length,InetAddress.getByName(hostName),PORT);
                 socket.send(packetPub);
 
@@ -99,7 +106,10 @@ class MessageReceiver implements Runnable {
     byte buffer[];
     ClientWindow window;
 
-    PublicKey publicKeyServer=null;
+    private static PublicKey publicKeyServer=null;
+
+    private static PublicKey publicKeyClient=null;
+    private static PrivateKey privateKeyClient=null;
 
     MessageReceiver(DatagramSocket sock, ClientWindow win) {
         socket = sock;
@@ -115,13 +125,13 @@ class MessageReceiver implements Runnable {
                 Arrays.fill(buffer, (byte) 0); //hace que el buffer se vacie
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
-                if (publicKeyServer!=null) {
+                if (publicKeyServer!=null) { //si no tiene almacenada la pub del server, es la primer comunicacion
                     String received= new String(buffer, 0,buffer.length).trim();
                     String decryptedMessage=received;
                     if (!received.contains("El mensaje fue recibido por")){
-                        decryptedMessage=rsa.decryptWithPublic(received.trim(),publicKeyServer);
+                        decryptedMessage=rsa.decryptWithPrivate(received.trim(),privateKeyClient);
+                        //desencriptamos con la priv nuestra
                     }
-                    System.out.println(decryptedMessage.length());
                     //crea una string con los datos recibidos
                     String receivedFinal = "";
                     String senderIp = "";
@@ -154,7 +164,7 @@ class MessageReceiver implements Runnable {
                 }
                 else {
                     publicKeyServer = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(packet.getData()));
-                    MessageSender.setPublicKeyServer(publicKeyServer);
+                    MessageSender.setPublicKeyServer(publicKeyServer); //obtenemos la publica del server
                 }
             } catch (Exception e) {
                 System.err.println(e);
@@ -185,6 +195,22 @@ class MessageReceiver implements Runnable {
 
     public void setWindow(ClientWindow window) {
         this.window = window;
+    }
+
+    public static PublicKey getPublicKeyClient() {
+        return publicKeyClient;
+    }
+
+    public static void setPublicKeyClient(PublicKey publicKeyClient) {
+        MessageReceiver.publicKeyClient = publicKeyClient;
+    }
+
+    public static PrivateKey getPrivateKeyClient() {
+        return privateKeyClient;
+    }
+
+    public static void setPrivateKeyClient(PrivateKey privateKeyClient) {
+        MessageReceiver.privateKeyClient = privateKeyClient;
     }
 }
 

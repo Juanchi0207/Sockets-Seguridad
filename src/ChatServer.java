@@ -47,10 +47,11 @@ public class ChatServer implements  Runnable {
                         existing_clients.add(id); //su string convertida con la ip y el puerto en el hashset
                         PublicKey publicKey = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(buffer));
                         Client client = new Client(client_port, publicKey);
-                        clients.put(clientAddress, client);
+                        clients.put(clientAddress, client); //se guarda una tabla relacion ip/cliente
+                        // en la que se tiene tu ip, puerto y pub. key
                         byte bufferPub[] = rsa.getPublicKey().getEncoded();
                         DatagramPacket packetPub = new DatagramPacket(bufferPub, bufferPub.length, clientAddress, client_port);
-                        socket.send(packetPub);
+                        socket.send(packetPub); // se manda la clave pub del server
                     }
                     for (Map.Entry<InetAddress, Client> lista : clients.entrySet()) {
                         System.out.println(RSA.encode(lista.getValue().getPublicKey().getEncoded()) + " el cliente: " + lista.getKey().toString());
@@ -86,14 +87,16 @@ public class ChatServer implements  Runnable {
                     }
 
                     if (!messageDecrypted.contains("#stopServer")) {
-                        String encryptedMessage = rsa.encryptWithPrivate(messageDecrypted, rsa.getPrivateKey());
-                        byte[] data = encryptedMessage.getBytes(); //guardamos los datos obtenidos en el byte
                         for (Map.Entry<InetAddress, Client> client : clients.entrySet()) {
                             InetAddress cl_address = client.getKey(); //verifica que la ip del mensaje este en la lista y envia el paquete
                             //solo a esa
                             int cl_port = client.getValue().getPort();
                             if (client.getKey().toString().equals(senderIp)) {
                                 if (hasheado.equals(hasher.encryptString(finalMessage))) {
+                                    //si el msj hasheado es igual al que se mando por autenticacion, se manda el packet
+                                    String encryptedMessage = rsa.encryptWithPublic(messageDecrypted, client.getValue().getPublicKey());
+                                    //encriptamos con la pub del cliente destino
+                                    byte[] data = encryptedMessage.getBytes(); //guardamos los datos obtenidos en el byte
                                     packet = new DatagramPacket(data, data.length, cl_address, cl_port);
                                     socket.send(packet);
                                     data = (" El mensaje fue recibido por " + cl_address).getBytes();
@@ -119,6 +122,16 @@ public class ChatServer implements  Runnable {
                         }
                     }
                     hasheado=hasheado.trim();
+                    //guardamos el hasheado en esta variable
+                    InetAddress clientAddress=packet.getAddress();
+                    PublicKey publicKeyAux=null;
+                    for (Map.Entry<InetAddress, Client> client:clients.entrySet()){
+                        if (client.getKey()==clientAddress){
+                            publicKeyAux=client.getValue().getPublicKey();
+                        }
+                    }
+                    hasheado=rsa.decryptWithPublic(hasheado,publicKeyAux); //desencriptamos con la pub
+                    //de el cliente emisor
                 }
             } catch (Exception e) {
                 System.err.println(e);
