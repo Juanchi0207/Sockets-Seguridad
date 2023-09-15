@@ -54,6 +54,7 @@ public class ChatServer implements  Runnable {
                         socket.send(packetPub); // se manda la clave pub del server
                     }
                     for (Map.Entry<InetAddress, Client> lista : clients.entrySet()) {
+                        System.out.println(lista.getKey().toString());
                         System.out.println(RSA.encode(lista.getValue().getPublicKey().getEncoded()) + " el cliente: " + lista.getKey().toString());
                     }
                     message = message.trim();
