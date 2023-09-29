@@ -1,3 +1,5 @@
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.net.*;
 import java.security.KeyFactory;
@@ -14,6 +16,8 @@ public class ChatServer implements  Runnable {
     private DatagramSocket socket;
     private HashSet<String> existing_clients; //hashset que contiene a todos los clientes conectados
     private HashMap<InetAddress, Client>clients;
+    private static SecretKey keyAes;
+
 
 
     @SuppressWarnings({ "unchecked", "rawtypes" })
@@ -29,6 +33,7 @@ public class ChatServer implements  Runnable {
         boolean infiniteLoop=true;
         RSA rsa=new RSA();
         rsa.init();
+        String key="sampi";
         Hasher hasher=new Hasher();
         String hasheado=null;
         while (infiniteLoop) {
@@ -52,7 +57,11 @@ public class ChatServer implements  Runnable {
                         byte bufferPub[] = rsa.getPublicKey().getEncoded();
                         DatagramPacket packetPub = new DatagramPacket(bufferPub, bufferPub.length, clientAddress, client_port);
                         socket.send(packetPub); // se manda la clave pub del server
+                        byte bufferAES[] = key.getBytes();//Encripto la clave de AES
+                        DatagramPacket claveAes = new DatagramPacket(bufferAES, bufferAES.length,clientAddress,client_port);
+                        socket.send(claveAes); //Se la envio al cliente
                     }
+
                     for (Map.Entry<InetAddress, Client> lista : clients.entrySet()) {
                         System.out.println(lista.getKey().toString());
                         System.out.println(RSA.encode(lista.getValue().getPublicKey().getEncoded()) + " el cliente: " + lista.getKey().toString());
@@ -61,7 +70,7 @@ public class ChatServer implements  Runnable {
                     String messageDecrypted = rsa.decryptWithPrivate(message, rsa.getPrivateKey());
                     String received = (id + " :" + messageDecrypted);
 
-                    // System.out.println(received); //muestra el msj por consola
+                    System.out.println(received); //muestra el msj por consola
                     String senderIp = "/";
                     String finalMessage = "";
                     boolean status=false;
@@ -159,6 +168,7 @@ public class ChatServer implements  Runnable {
 
     public static void main(String args[]) throws Exception {
         ChatServer server_thread = new ChatServer();
+
         server_thread.run();
     }
 }

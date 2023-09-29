@@ -1,11 +1,20 @@
+import javax.crypto.*;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.security.KeyFactory;
-import java.security.PrivateKey;
-import java.security.PublicKey;
+import java.security.*;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Arrays;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import javax.xml.crypto.Data;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Base64;
+
+
 
 class MessageSender implements Runnable {
     public final static int PORT = 2020; //puerto asignado al server
@@ -16,7 +25,11 @@ class MessageSender implements Runnable {
 
     private PublicKey publicKeyClient;
     private PrivateKey privateKeyCliente;
+    private static String keyAes;
 
+    public static void setKeyAes(String keyAes) {
+        MessageSender.keyAes = keyAes;
+    }
 
     MessageSender(DatagramSocket sock, String host, ClientWindow win) {
         socket = sock;
@@ -35,6 +48,7 @@ class MessageSender implements Runnable {
     private void sendMessage(String s,RSA rsa) throws Exception {
         Hasher hasher=new Hasher();
         String aux=""; //mensaje solo sin la ip destino
+        String reciever="";
         boolean status=false;
         for (int i=0;i<s.length();i++){
             if(s.charAt(i)=='#'){
@@ -43,16 +57,23 @@ class MessageSender implements Runnable {
             else if (status) {
                 aux=aux+s.charAt(i);
             }
+            else {
+                reciever=reciever+s.charAt(i);
+            }
         }
         InetAddress address = InetAddress.getByName(hostName); //obtiene ip
-        String hashedMessage="Hasheado:"+rsa.encryptWithPrivate(hasher.encryptString(aux),privateKeyCliente);
+        String encryptedMessage= AES.encrypt(aux,keyAes); //encriptado con clave AES
+        String msgFinal=reciever+"#"+encryptedMessage;
+        String hashedMessage="Hasheado:"+rsa.encryptWithPrivate(hasher.encryptString(encryptedMessage),privateKeyCliente);
         //hasheamos y encriptamos con clave priv para asegurar autenticacion
         byte buffer1[] = hashedMessage.getBytes();
         DatagramPacket packetHash=new DatagramPacket(buffer1, buffer1.length,address,PORT);
         socket.send(packetHash);
         //envio del packet hasheado y encriptado
-        String encryptedMessage=rsa.encryptWithPublic(s,publicKeyServer); //encriptado publica servidor
-        byte buffer[] = encryptedMessage.getBytes(); //convierte el mensaje a bytes
+        /*Toda esta parte hay que cambiarla para que encripte con la SecretKey*/
+
+        String encryptedMessagePub=rsa.encryptWithPublic(msgFinal,publicKeyServer); //encriptado publica servidor
+        byte buffer[] = encryptedMessagePub.getBytes(); //convierte el mensaje a bytes
         DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, PORT);
         socket.send(packet); //crea y envia el paquete por el socket
     }
@@ -71,6 +92,7 @@ class MessageSender implements Runnable {
                 byte bufferPub[] = publicKeyClient.getEncoded();
                 DatagramPacket packetPub=new DatagramPacket(bufferPub,bufferPub.length,InetAddress.getByName(hostName),PORT);
                 socket.send(packetPub);
+
 
             } catch (Exception e) {
                 window.displayMessage(e.getMessage());
@@ -101,6 +123,9 @@ class MessageSender implements Runnable {
     }
 }
 
+
+
+
 class MessageReceiver implements Runnable {
     DatagramSocket socket;
     byte buffer[];
@@ -111,60 +136,82 @@ class MessageReceiver implements Runnable {
     private static PublicKey publicKeyClient=null;
     private static PrivateKey privateKeyClient=null;
 
+    private static String keyAes=null;
+
+
     MessageReceiver(DatagramSocket sock, ClientWindow win) {
         socket = sock;
         buffer = new byte[1024];
         window = win;
     }
 
+
+
+
+    public static String getKeyAes() {
+        return keyAes;
+    }
+
+    public static void setKeyAes(String keyAes) {
+        MessageReceiver.keyAes = keyAes;
+    }
+
     public void run() {
         boolean infiniteLoop=true;
         RSA rsa=new RSA();
+        AES aes=new AES();
         while (infiniteLoop) {
             try { //bucle infinito que recibe paquetes
                 Arrays.fill(buffer, (byte) 0); //hace que el buffer se vacie
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
-                if (publicKeyServer!=null) { //si no tiene almacenada la pub del server, es la primer comunicacion
+                if (publicKeyServer!=null && keyAes!=null) { //si no tiene almacenada la pub del server, es la primer comunicacion
                     String received= new String(buffer, 0,buffer.length).trim();
-                    String decryptedMessage=received;
+                    String decryptedMessagePub=received;
                     if (!received.contains("El mensaje fue recibido por")){
-                        decryptedMessage=rsa.decryptWithPrivate(received.trim(),privateKeyClient);
+                        decryptedMessagePub=rsa.decryptWithPrivate(received.trim(),privateKeyClient);
                         //desencriptamos con la priv nuestra
                     }
                     //crea una string con los datos recibidos
-                    String receivedFinal = "";
+                    String receivedEncrypted = "";
                     String senderIp = "";
                     boolean status = false;
-                    for (int i = 0; i < decryptedMessage.length(); i++) {
-
-                        if (decryptedMessage.charAt(i) == ':') {
+                    for (int i = 0; i < decryptedMessagePub.length(); i++) {
+                        if (decryptedMessagePub.charAt(i) == '#') {
                             status = true;
                             i++;
                         }
-                        if (decryptedMessage.charAt(i) == '#') {
-                            status = false;
+                        if (!status) {
+                            senderIp = senderIp + decryptedMessagePub.charAt(i);
                         }
-                        if (status) {
-                            senderIp = senderIp + decryptedMessage.charAt(i);
-                        } else {
-                            receivedFinal = receivedFinal + decryptedMessage.charAt(i);
+                        else {
+                            receivedEncrypted=receivedEncrypted+decryptedMessagePub.charAt(i);
                         }
                     }
-                    if (senderIp.equals("Nuevo cliente conectado - Bienvenido!") == false) {
-                        InetAddress address = InetAddress.getByName(senderIp);
-                    }
-                    System.out.println(receivedFinal);
-                    if (!receivedFinal.contains("#stopClient")) {
-                        window.displayMessage(receivedFinal); //tmb se imprime en la ventana
+                    String decryptedAesMessage=AES.decrypt(receivedEncrypted,keyAes);
+
+                    if (!decryptedAesMessage.contains("#stopClient")) {
+                        window.displayMessage(senderIp+"#"+decryptedAesMessage); //tmb se imprime en la ventana
                     } else {
                         Thread.currentThread().join();
                         infiniteLoop = false;
                     }
                 }
                 else {
-                    publicKeyServer = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(packet.getData()));
-                    MessageSender.setPublicKeyServer(publicKeyServer); //obtenemos la publica del server
+                    if (publicKeyServer == null){
+                        publicKeyServer = KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(packet.getData()));
+                    MessageSender.setPublicKeyServer(publicKeyServer);//obtenemos la publica del server
+                    }
+                    else if(keyAes==null) {
+                        /*ACA TIENE QUE RECIBIR EL SOCKET CON LA CLAVE AES*/
+                        String aux=new String(buffer, 0, buffer.length).trim();
+                        keyAes=aux;
+                        MessageSender.setKeyAes(aux);
+                    }
+                    //creamos en lineas arriba la clave y luego la obtenemos
+
+
+
                 }
             } catch (Exception e) {
                 System.err.println(e);
@@ -214,6 +261,7 @@ class MessageReceiver implements Runnable {
     }
 }
 
+
 public class ChatClient {
 
     public static void main(String args[]) throws Exception {
@@ -233,4 +281,5 @@ public class ChatClient {
         receiverThread.start(); // inicio ambos threads
 
     }
+
 }
